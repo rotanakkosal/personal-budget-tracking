@@ -10,13 +10,13 @@ type Tab = "income" | "expenses" | "summary";
 type ToastType = "info" | "success" | "error";
 type Toast = { id: string; message: string; type: ToastType };
 
-const RATE = Number(getComputedStyle(document.documentElement).getPropertyValue('--rate')) || 1388;
+// const RATE = Number(getComputedStyle(document.documentElement).getPropertyValue('--rate')) || 1388;
 
 const fmtKRW = new Intl.NumberFormat('ko-KR', { style: 'currency', currency: 'KRW', maximumFractionDigits: 0 });
 const fmtUSD = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 function uid(){ return 'id-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2,8); }
-function krwToUsd(krw:number){ return Number(krw) / RATE; }
+function krwToUsd(krw:number){ return Number(krw) / 1388; }
 function esc(str: string){ return String(str).replace(/[&<>"']/g, s => ({'&':'&','<':'<','>':'>','"':'"','\'':"'" }[s] as string)); }
 
 export default function Page(){
@@ -232,7 +232,7 @@ export default function Page(){
         {/* Income Tab */}
         <section id="tab-income" className="tab card" role="tabpanel" aria-labelledby="Income" hidden={tab!=='income'}>
           <h2 className="section-title">Add Income</h2>
-          <p className="subtle">Enter your income details. USD value is calculated in real-time using a fixed rate: <strong>1 USD = <span id="rateDisplay1">{RATE.toLocaleString('en-US')}</span> KRW</strong>.</p>
+          <p className="subtle">Enter your income details. USD value is calculated in real-time using a fixed rate: <strong>1 USD = <span id="rateDisplay1">1388</span> KRW</strong>.</p>
 
           <form onSubmit={onAddIncome} noValidate>
             <div className="row">
@@ -284,7 +284,7 @@ export default function Page(){
         {/* Expenses Tab */}
         <section id="tab-expenses" className="tab card" role="tabpanel" aria-labelledby="Expenses" hidden={tab!=='expenses'}>
           <h2 className="section-title">Add Expense</h2>
-          <p className="subtle">Track your spending by category. USD value is calculated in real-time using <strong>1 USD = <span id="rateDisplay2">{RATE.toLocaleString('en-US')}</span> KRW</strong>.</p>
+          <p className="subtle">Track your spending by category. USD value is calculated in real-time using <strong>1 USD = <span id="rateDisplay2">1388</span> KRW</strong>.</p>
 
           <form onSubmit={onAddExpense} noValidate>
             <div className="row">
@@ -423,7 +423,7 @@ export default function Page(){
       </div>
 
       <footer>
-        <div className="muted">Made for fast, reliable personal budgeting. Data stays in your browser. Fixed rate: 1 USD = {RATE.toLocaleString('en-US')} KRW.</div>
+        <div className="muted">Made for fast, reliable personal budgeting. Data stays in your browser. Fixed rate: 1 USD = 1388 KRW.</div>
       </footer>
 
     </>
