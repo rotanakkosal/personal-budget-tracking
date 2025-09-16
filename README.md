@@ -6,6 +6,7 @@ This is a faithful conversion of your static HTML into a Next.js 14 app using th
 - Tabs (Income / Expenses / Summary) with localStorage persistence
 - KRW→USD conversion at a fixed rate (1 USD = 1,388 KRW)
 - Add / delete rows for income & expenses
+- Create custom expense categories
 - Category breakdown with percentage bars
 - JSON export / import
 - Local-only data (no backend)
