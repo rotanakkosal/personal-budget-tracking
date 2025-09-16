@@ -227,7 +227,7 @@ export default function Page(){
 
   // Export / Import / Clear
   function exportJSON(){
-    const data = { version: 1, rate, exportedAt: new Date().toISOString(), income, expenses };
+    const data = { version: 1, rate: rate, exportedAt: new Date().toISOString(), income, expenses };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -256,6 +256,18 @@ export default function Page(){
         if (!confirmReplace) return;
         const inc: IncomeRow[] = obj.income.map((n:any) => ({ id: n.id || uid(), date: n.date||"", desc: n.desc||"", amount: Math.max(0, Number(n.amount||0)), notes: n.notes||"" }));
         const exp: ExpenseRow[] = obj.expenses.map((n:any) => ({ id: n.id || uid(), date: n.date||"", category: n.category||"Other", desc: n.desc||"", amount: Math.max(0, Number(n.amount||0)), notes: n.notes||"" }));
+        if (typeof obj.rate !== 'undefined'){
+          const importedRate = Number(obj.rate);
+          if (Number.isFinite(importedRate) && importedRate > 0){
+            setRate(importedRate);
+            try {
+              localStorage.setItem(RATE_STORAGE_KEY, String(importedRate));
+              localStorage.setItem(RATE_FETCHED_AT_KEY, String(Date.now()));
+            } catch (storageErr) {
+              console.error('Failed to persist imported exchange rate', storageErr);
+            }
+          }
+        }
         setIncome(inc); setExpenses(exp);
         toast("Import successful", "success");
       } catch (err: any){
