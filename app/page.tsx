@@ -17,6 +17,17 @@ const RATE_MAX_AGE_MS = 1000 * 60 * 60 * 12;
 const fmtKRW = new Intl.NumberFormat('ko-KR', { style: 'currency', currency: 'KRW', maximumFractionDigits: 0 });
 const fmtUSD = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
+const DEFAULT_CATEGORIES = [
+  'Room and Utility',
+  'Daily Expense',
+  'Borrow Others',
+  'Food & Drinks',
+  'Transportation',
+  'Entertainment',
+  'Shopping',
+  'Other'
+] as const;
+
 function uid(){ return 'id-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2,8); }
 function krwToUsd(krw:number, rate:number){
   const normalizedRate = Number(rate);
@@ -102,10 +113,14 @@ export default function Page(){
     try {
       const inc = JSON.parse(localStorage.getItem('budget_income') || '[]');
       const exp = JSON.parse(localStorage.getItem('budget_expenses') || '[]');
+      const cat = JSON.parse(localStorage.getItem('budget_categories') || '[]');
       setIncome(Array.isArray(inc) ? inc : []);
       setExpenses(Array.isArray(exp) ? exp : []);
+      const catArr = Array.isArray(cat) && cat.length ? cat : [...DEFAULT_CATEGORIES];
+      const expCats = Array.isArray(exp) ? exp.map((e:any)=>e.category).filter(Boolean) : [];
+      setCategories(Array.from(new Set([...catArr, ...expCats])));
     } catch {
-      setIncome([]); setExpenses([]);
+      setIncome([]); setExpenses([]); setCategories([...DEFAULT_CATEGORIES]);
       toast("Local data was corrupted and has been reset.", "error", 4000);
     }
   }, []);
@@ -114,10 +129,11 @@ export default function Page(){
     try {
       localStorage.setItem('budget_income', JSON.stringify(income));
       localStorage.setItem('budget_expenses', JSON.stringify(expenses));
+      localStorage.setItem('budget_categories', JSON.stringify(categories));
     } catch {
       toast("Failed to save to local storage.", "error", 3500);
     }
-  }, [income, expenses]);
+  }, [income, expenses, categories]);
 
   // Forms refs
   const incomeDateRef = useRef<HTMLInputElement>(null);
@@ -147,9 +163,7 @@ export default function Page(){
     };
   }, [income, expenses, rate]);
 
-  const categories = [
-    'Room and Utility','Daily Expense','Borrow Others','Food & Drinks','Transportation','Entertainment','Shopping','Other'
-  ] as const;
+  const [categories, setCategories] = useState<string[]>([...DEFAULT_CATEGORIES]);
 
   const breakdown = useMemo(()=>{
     const byCat: Record<string, number> = {};
@@ -217,6 +231,18 @@ export default function Page(){
     setExpenseForm(f => ({ date: f.date, category: "", desc: "", amount: "", notes: "" }));
   }
 
+  function onAddCategory(){
+    const name = window.prompt('New category name')?.trim();
+    if (!name) return;
+    if (categories.some(c => c.toLowerCase() === name.toLowerCase())){
+      toast('Category already exists', 'error', 3000);
+      return;
+    }
+    setCategories(c => [...c, name]);
+    setExpenseForm(f => ({ ...f, category: name }));
+    toast('Category added', 'success');
+  }
+
   function onDelete(id: string, type: "income"|"expense"){
     const ok = window.confirm('Delete this record? This cannot be undone.');
     if (!ok) return;
@@ -227,7 +253,7 @@ export default function Page(){
 
   // Export / Import / Clear
   function exportJSON(){
-    const data = { version: 1, rate, exportedAt: new Date().toISOString(), income, expenses };
+    const data = { version: 1, rate, exportedAt: new Date().toISOString(), income, expenses, categories };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -256,7 +282,8 @@ export default function Page(){
         if (!confirmReplace) return;
         const inc: IncomeRow[] = obj.income.map((n:any) => ({ id: n.id || uid(), date: n.date||"", desc: n.desc||"", amount: Math.max(0, Number(n.amount||0)), notes: n.notes||"" }));
         const exp: ExpenseRow[] = obj.expenses.map((n:any) => ({ id: n.id || uid(), date: n.date||"", category: n.category||"Other", desc: n.desc||"", amount: Math.max(0, Number(n.amount||0)), notes: n.notes||"" }));
-        setIncome(inc); setExpenses(exp);
+        const cat: string[] = Array.isArray(obj.categories) && obj.categories.length ? obj.categories.map((c:any) => String(c)) : [...DEFAULT_CATEGORIES];
+        setIncome(inc); setExpenses(exp); setCategories(Array.from(new Set([...cat, ...exp.map(e=>e.category)])));
         toast("Import successful", "success");
       } catch (err: any){
         toast("Import failed: " + err.message, "error", 5000);
@@ -268,7 +295,7 @@ export default function Page(){
   function clearAll(){
     const ok = window.confirm('Clear ALL data (income + expenses)? This cannot be undone.');
     if (!ok) return;
-    setIncome([]); setExpenses([]);
+    setIncome([]); setExpenses([]); setCategories([...DEFAULT_CATEGORIES]);
     toast("All data cleared", "success");
   }
 
@@ -351,10 +378,13 @@ export default function Page(){
               </div>
               <div>
                 <label htmlFor="expense-category">Category *</label>
-                <select id="expense-category" required value={expenseForm.category} onChange={(e)=>setExpenseForm(f=>({...f, category:e.target.value}))}>
-                  <option value="">Select a category</option>
-                  {Array.from(categories).map(c => <option key={c} value={c}>{c}</option>)}
-                </select>
+                <div style={{display:'flex', gap:8, alignItems:'center'}}>
+                  <select id="expense-category" required value={expenseForm.category} onChange={(e)=>setExpenseForm(f=>({...f, category:e.target.value}))}>
+                    <option value="">Select a category</option>
+                    {categories.map(c => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                  <button type="button" className="btn btn-sm" onClick={onAddCategory} aria-label="Add category">Add</button>
+                </div>
               </div>
               <div>
                 <label htmlFor="expense-desc">Description *</label>
@@ -440,7 +470,7 @@ export default function Page(){
                 <table id="breakdown-table" aria-label="Category Breakdown">
                   <thead><tr><th>Category</th><th>KRW</th><th>%</th></tr></thead>
                   <tbody>
-                    {Array.from(categories).map(cat => {
+                    {categories.map(cat => {
                       const amt = breakdown[cat] || 0;
                       const pct = (amt / (totals.expenseKRW || 1)) * 100;
                       return (
@@ -467,7 +497,7 @@ export default function Page(){
                 <button className="btn" onClick={importJSONFromPicker}>Import JSON</button>
                 <button className="btn btn-danger" onClick={clearAll}>Clear All Data</button>
               </div>
-              <p className="subtle" style={{marginTop:12}}>Import replaces existing data after confirmation. Expected format: {'{ rate, income:[...], expenses:[...] }'}.</p>
+              <p className="subtle" style={{marginTop:12}}>Import replaces existing data after confirmation. Expected format: {'{ rate, income:[...], expenses:[...], categories:[...] }'}.</p>
             </div>
           </div>
         </section>
