@@ -10,16 +10,34 @@ type Tab = "income" | "expenses" | "summary";
 type ToastType = "info" | "success" | "error";
 type Toast = { id: string; message: string; type: ToastType };
 
-// const RATE = Number(getComputedStyle(document.documentElement).getPropertyValue('--rate')) || 1388;
+const RATE_STORAGE_KEY = 'budget_rate';
+const RATE_FETCHED_AT_KEY = 'budget_rate_timestamp';
+const RATE_MAX_AGE_MS = 1000 * 60 * 60 * 12;
 
 const fmtKRW = new Intl.NumberFormat('ko-KR', { style: 'currency', currency: 'KRW', maximumFractionDigits: 0 });
 const fmtUSD = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 function uid(){ return 'id-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2,8); }
-function krwToUsd(krw:number){ return Number(krw) / 1388; }
+function krwToUsd(krw:number, rate:number){
+  const normalizedRate = Number(rate);
+  if (!Number.isFinite(normalizedRate) || normalizedRate <= 0) return 0;
+  return Number(krw) / normalizedRate;
+}
 function esc(str: string){ return String(str).replace(/[&<>"']/g, s => ({'&':'&','<':'<','>':'>','"':'"','\'':"'" }[s] as string)); }
 
 export default function Page(){
+  const [rate, setRate] = useState(1388);
+  useEffect(()=>{
+    try {
+      const saved = localStorage.getItem(RATE_STORAGE_KEY);
+      if (!saved) return;
+      const parsed = Number(saved);
+      if (!Number.isFinite(parsed) || parsed <= 0) return;
+      setRate(parsed);
+    } catch (err) {
+      console.error('Failed to load saved exchange rate', err);
+    }
+  }, []);
   // Tabs
   const [tab, setTab] = useState<Tab>('income');
   useEffect(()=>{
@@ -39,6 +57,45 @@ export default function Page(){
     setToasts(t => [...t, { id, message, type }]);
     setTimeout(()=> setToasts(t => t.filter(x => x.id !== id)), timeout);
   }
+
+  useEffect(()=>{
+    let cancelled = false;
+    async function refreshRate(){
+      try {
+        const res = await fetch('https://open.er-api.com/v6/latest/KRW');
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        const usdPerKrw = Number(data?.rates?.USD);
+        if (!Number.isFinite(usdPerKrw) || usdPerKrw <= 0) throw new Error('Invalid rate data');
+        const krwPerUsd = 1 / usdPerKrw;
+        if (cancelled) return;
+        setRate(krwPerUsd);
+        try {
+          localStorage.setItem(RATE_STORAGE_KEY, String(krwPerUsd));
+          localStorage.setItem(RATE_FETCHED_AT_KEY, String(Date.now()));
+        } catch (storageErr) {
+          console.error('Failed to persist exchange rate', storageErr);
+        }
+      } catch (err) {
+        if (cancelled) return;
+        console.error('Failed to fetch KRW to USD rate', err);
+        toast('Unable to refresh exchange rate. Using the last known value.', 'error', 4000);
+      }
+    }
+
+    try {
+      const lastFetched = Number(localStorage.getItem(RATE_FETCHED_AT_KEY));
+      if (!Number.isFinite(lastFetched) || (Date.now() - lastFetched) > RATE_MAX_AGE_MS){
+        refreshRate();
+      }
+    } catch (err) {
+      console.error('Failed to read stored exchange rate timestamp', err);
+      refreshRate();
+    }
+
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Load / Save
   useEffect(()=>{
@@ -84,11 +141,11 @@ export default function Page(){
     const remainingKRW = incomeKRW - expenseKRW;
     return {
       incomeKRW, expenseKRW, remainingKRW,
-      incomeUSD: krwToUsd(incomeKRW),
-      expenseUSD: krwToUsd(expenseKRW),
-      remainingUSD: krwToUsd(remainingKRW)
+      incomeUSD: krwToUsd(incomeKRW, rate),
+      expenseUSD: krwToUsd(expenseKRW, rate),
+      remainingUSD: krwToUsd(remainingKRW, rate)
     };
-  }, [income, expenses]);
+  }, [income, expenses, rate]);
 
   const categories = [
     'Room and Utility','Daily Expense','Borrow Others','Food & Drinks','Transportation','Entertainment','Shopping','Other'
@@ -119,12 +176,12 @@ export default function Page(){
   // Helpers
   const incomeUSD = useMemo(()=>{
     const v = Number(incomeForm.amount || 0);
-    return fmtUSD.format(krwToUsd(v));
-  }, [incomeForm.amount]);
+    return fmtUSD.format(krwToUsd(v, rate));
+  }, [incomeForm.amount, rate]);
   const expenseUSD = useMemo(()=>{
     const v = Number(expenseForm.amount || 0);
-    return fmtUSD.format(krwToUsd(v));
-  }, [expenseForm.amount]);
+    return fmtUSD.format(krwToUsd(v, rate));
+  }, [expenseForm.amount, rate]);
 
   function onAddIncome(e: React.FormEvent){
     e.preventDefault();
@@ -170,7 +227,7 @@ export default function Page(){
 
   // Export / Import / Clear
   function exportJSON(){
-    const data = { version: 1, rate: RATE, exportedAt: new Date().toISOString(), income, expenses };
+    const data = { version: 1, rate, exportedAt: new Date().toISOString(), income, expenses };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -232,7 +289,7 @@ export default function Page(){
         {/* Income Tab */}
         <section id="tab-income" className="tab card" role="tabpanel" aria-labelledby="Income" hidden={tab!=='income'}>
           <h2 className="section-title">Add Income</h2>
-          <p className="subtle">Enter your income details. USD value is calculated in real-time using a fixed rate: <strong>1 USD = <span id="rateDisplay1">1388</span> KRW</strong>.</p>
+          <p className="subtle">Enter your income details. USD value is calculated in real-time using a fixed rate: <strong>1 USD = <span id="rateDisplay1">{rate.toLocaleString()}</span> KRW</strong>.</p>
 
           <form onSubmit={onAddIncome} noValidate>
             <div className="row">
@@ -271,7 +328,7 @@ export default function Page(){
                     <td>{row.date || ""}</td>
                     <td>{row.desc}</td>
                     <td><span className="pill green">{fmtKRW.format(row.amount)}</span></td>
-                    <td>{fmtUSD.format(krwToUsd(row.amount))}</td>
+                    <td>{fmtUSD.format(krwToUsd(row.amount, rate))}</td>
                     <td>{row.notes || ""}</td>
                     <td><button className="btn btn-danger btn-sm" onClick={()=>onDelete(row.id, "income")} aria-label="Delete income">Delete</button></td>
                   </tr>
@@ -284,7 +341,7 @@ export default function Page(){
         {/* Expenses Tab */}
         <section id="tab-expenses" className="tab card" role="tabpanel" aria-labelledby="Expenses" hidden={tab!=='expenses'}>
           <h2 className="section-title">Add Expense</h2>
-          <p className="subtle">Track your spending by category. USD value is calculated in real-time using <strong>1 USD = <span id="rateDisplay2">1388</span> KRW</strong>.</p>
+          <p className="subtle">Track your spending by category. USD value is calculated in real-time using <strong>1 USD = <span id="rateDisplay2">{rate.toLocaleString()}</span> KRW</strong>.</p>
 
           <form onSubmit={onAddExpense} noValidate>
             <div className="row">
@@ -331,7 +388,7 @@ export default function Page(){
                     <td>{row.category}</td>
                     <td>{row.desc}</td>
                     <td><span className="pill red">{fmtKRW.format(row.amount)}</span></td>
-                    <td>{fmtUSD.format(krwToUsd(row.amount))}</td>
+                    <td>{fmtUSD.format(krwToUsd(row.amount, rate))}</td>
                     <td>{row.notes || ""}</td>
                     <td><button className="btn btn-danger btn-sm" onClick={()=>onDelete(row.id, "expense")} aria-label="Delete expense">Delete</button></td>
                   </tr>
@@ -423,7 +480,7 @@ export default function Page(){
       </div>
 
       <footer>
-        <div className="muted">Made for fast, reliable personal budgeting. Data stays in your browser. Fixed rate: 1 USD = 1388 KRW.</div>
+        <div className="muted">Made for fast, reliable personal budgeting. Data stays in your browser. Fixed rate: 1 USD = {rate.toLocaleString()} KRW.</div>
       </footer>
 
     </>
