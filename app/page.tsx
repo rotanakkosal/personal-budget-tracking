@@ -60,6 +60,7 @@ export default function Page(){
   // Data
   const [income, setIncome] = useState<IncomeRow[]>([]);
   const [expenses, setExpenses] = useState<ExpenseRow[]>([]);
+  const [categories, setCategories] = useState<string[]>([...DEFAULT_CATEGORIES]);
 
   // Toasts
   const [toasts, setToasts] = useState<Toast[]>([]);
@@ -162,8 +163,6 @@ export default function Page(){
       remainingUSD: krwToUsd(remainingKRW, rate)
     };
   }, [income, expenses, rate]);
-
-  const [categories, setCategories] = useState<string[]>([...DEFAULT_CATEGORIES]);
 
   const breakdown = useMemo(()=>{
     const byCat: Record<string, number> = {};
